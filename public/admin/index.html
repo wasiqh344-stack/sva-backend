@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SVA Design — Admin</title>
+<style>
+  :root{
+    --bg:#08070c; --bg-2:#0d0b14; --violet:#8b5cf6; --violet-2:#a855f7;
+    --text:#f5f4f9; --muted:#9b96ab; --line: rgba(255,255,255,.08); --card: rgba(255,255,255,.03);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:Manrope,system-ui,sans-serif;min-height:100vh;}
+  .wrap{max-width:1000px;margin:0 auto;padding:40px 24px;}
+  h1{font-size:22px;font-weight:800;margin-bottom:6px;}
+  .muted{color:var(--muted);font-size:13px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;margin-top:24px;}
+  input,select,button,textarea{font-family:inherit;font-size:14px;}
+  input{width:100%;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;color:#fff;margin-bottom:14px;outline:none;}
+  input:focus{border-color:var(--violet-2);}
+  button{background:linear-gradient(135deg,var(--violet),var(--violet-2));border:none;color:#fff;
+    padding:12px 20px;border-radius:10px;font-weight:700;cursor:pointer;}
+  button.secondary{background:transparent;border:1px solid var(--line);}
+  button.danger{background:#3a1620;border:1px solid #8a2b3d;}
+  .row{display:flex;gap:10px;}
+  .tabs{display:flex;gap:8px;margin-bottom:20px;}
+  .tabs button{flex:1;background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--muted);}
+  .tabs button.active{background:var(--violet-2);color:#fff;border-color:var(--violet-2);}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;}
+  .badge{padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;}
+  .badge.new{background:rgba(139,92,246,.2);color:#c4a4f9;}
+  .badge.read{background:rgba(255,255,255,.08);color:var(--muted);}
+  .badge.replied{background:rgba(34,197,94,.15);color:#4ade80;}
+  .msg-cell{max-width:260px;white-space:pre-wrap;}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .error{color:#f87171;font-size:13px;margin-top:-6px;margin-bottom:14px;min-height:16px;}
+  select{background:rgba(255,255,255,.05);color:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 8px;}
+  a.logout{color:var(--muted);font-size:13px;cursor:pointer;}
+  a.logout:hover{color:#fff;}
+</style>
+</head>
+<body>
+<div id="app" class="wrap"></div>
+
+<script>
+const API = ""; // same origin as this admin page
+
+function getToken(){ return localStorage.getItem("sva_admin_token"); }
+function setToken(t){ localStorage.setItem("sva_admin_token", t); }
+function clearToken(){ localStorage.removeItem("sva_admin_token"); }
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+      ...(getToken() ? { Authorization: "Bearer " + getToken() } : {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+function render(html) { document.getElementById("app").innerHTML = html; }
+
+function renderLogin(mode = "login") {
+  render(`
+    <h1>SVA Design — Admin</h1>
+    <p class="muted">Sign in to manage contact form submissions.</p>
+    <div class="card" style="max-width:420px;">
+      <div class="tabs">
+        <button id="tabLogin" class="${mode === "login" ? "active" : ""}">Sign In</button>
+        <button id="tabSignup" class="${mode === "signup" ? "active" : ""}">Sign Up</button>
+      </div>
+      <form id="authForm">
+        <input type="email" id="email" placeholder="Email" required />
+        <input type="password" id="password" placeholder="Password" required />
+        ${mode === "signup" ? '<input type="password" id="secret" placeholder="Signup secret (from server .env)" required />' : ""}
+        <div class="error" id="errBox"></div>
+        <button type="submit" style="width:100%;">${mode === "signup" ? "Create Admin Account" : "Sign In"}</button>
+      </form>
+    </div>
+  `);
+
+  document.getElementById("tabLogin").onclick = () => renderLogin("login");
+  document.getElementById("tabSignup").onclick = () => renderLogin("signup");
+
+  document.getElementById("authForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const errBox = document.getElementById("errBox");
+    errBox.textContent = "";
+    try {
+      if (mode === "signup") {
+        const secret = document.getElementById("secret").value;
+        const data = await api("/api/admin/signup", {
+          method: "POST",
+          headers: { "x-signup-secret": secret },
+          body: JSON.stringify({ email, password }),
+        });
+        setToken(data.token);
+      } else {
+        const data = await api("/api/admin/login", {
+          method: "POST",
+          body: JSON.stringify({ email, password }),
+        });
+        setToken(data.token);
+      }
+      renderDashboard();
+    } catch (err) {
+      errBox.textContent = err.message;
+    }
+  };
+}
+
+async function renderDashboard() {
+  render(`<p class="muted">Loading messages…</p>`);
+  try {
+    const me = await api("/api/admin/me");
+    const { messages } = await api("/api/admin/messages");
+
+    const rows = messages.map(m => `
+      <tr>
+        <td>${escapeHtml(m.name)}<br/><span class="muted">${escapeHtml(m.email)}</span></td>
+        <td>${escapeHtml(m.service || "—")}</td>
+        <td class="msg-cell">${escapeHtml(m.message)}</td>
+        <td><span class="badge ${m.status}">${m.status}</span></td>
+        <td class="muted">${new Date(m.created_at).toLocaleString()}</td>
+        <td>
+          <select data-id="${m.id}" class="statusSelect">
+            <option value="new" ${m.status === "new" ? "selected" : ""}>new</option>
+            <option value="read" ${m.status === "read" ? "selected" : ""}>read</option>
+            <option value="replied" ${m.status === "replied" ? "selected" : ""}>replied</option>
+          </select>
+          <button class="danger delBtn" data-id="${m.id}" style="margin-top:6px;">Delete</button>
+        </td>
+      </tr>
+    `).join("");
+
+    render(`
+      <div class="top">
+        <div>
+          <h1>SVA Design — Admin</h1>
+          <p class="muted">Signed in as ${escapeHtml(me.email)}</p>
+        </div>
+        <a class="logout" id="logoutBtn">Log out</a>
+      </div>
+      <div class="card">
+        <div class="top">
+          <strong>Contact Submissions (${messages.length})</strong>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr><th>Contact</th><th>Service</th><th>Message</th><th>Status</th><th>Received</th><th>Actions</th></tr>
+            </thead>
+            <tbody>${rows || '<tr><td colspan="6" class="muted">No submissions yet.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    `);
+
+    document.getElementById("logoutBtn").onclick = () => { clearToken(); renderLogin(); };
+
+    document.querySelectorAll(".statusSelect").forEach(sel => {
+      sel.onchange = async () => {
+        await api(`/api/admin/messages/${sel.dataset.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: sel.value }),
+        });
+        renderDashboard();
+      };
+    });
+
+    document.querySelectorAll(".delBtn").forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm("Delete this message?")) return;
+        await api(`/api/admin/messages/${btn.dataset.id}`, { method: "DELETE" });
+        renderDashboard();
+      };
+    });
+  } catch (err) {
+    clearToken();
+    renderLogin();
+  }
+}
+
+// ---- boot ----
+if (getToken()) {
+  renderDashboard();
+} else {
+  renderLogin();
+}
+
+function escapeHtml(str = "") {
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+</body>
+</html>
