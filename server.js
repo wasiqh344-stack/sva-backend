@@ -19,9 +19,14 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "")
   .map((o) => o.trim())
   .filter(Boolean);
 
+const corsOrigin =
+  allowedOrigins.length === 0 || allowedOrigins.includes("*")
+    ? true
+    : allowedOrigins;
+
 app.use(
   cors({
-    origin: allowedOrigins.length ? allowedOrigins : true,
+    origin: corsOrigin,
   })
 );
 
