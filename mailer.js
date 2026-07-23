@@ -12,12 +12,19 @@ function getTransporter() {
     return null;
   }
 
+  // Explicit host/port config (more reliable on cloud hosts than the
+  // generic "service: gmail" shortcut, which can time out on some platforms).
   transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true, // true for port 465, false for 587
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD,
     },
+    connectionTimeout: 15000, // 15s instead of default (often too short on cold cloud connections)
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
   });
 
   return transporter;
